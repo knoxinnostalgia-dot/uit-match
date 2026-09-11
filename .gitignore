@@ -1,0 +1,12 @@
+node_modules/
+dist/
+
+# Local database and anything students upload
+server/data/
+server/uploads/
+
+.env
+.env.*
+!.env.example
+
+*.log
