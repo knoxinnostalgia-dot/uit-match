@@ -110,7 +110,7 @@ export default function SafetySheet({ matchId, userId, name, onClose, onDone }: 
                 maxLength={1000}
               />
             </div>
-            <button className="btn" type="button" disabled={busy} onClick={report}>
+            <button className={`btn${busy ? ' is-busy' : ''}`} type="button" disabled={busy} onClick={report}>
               {busy ? 'Sending…' : 'Submit report and block'}
             </button>
             <button className="btn btn-ghost" type="button" disabled={busy} onClick={() => setMode('menu')} style={{ marginTop: 10 }}>

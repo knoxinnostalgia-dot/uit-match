@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api';
 import AcademicFields from '../components/AcademicFields';
 import ProfilePreview from '../components/ProfilePreview';
+import StageLoader from '../components/StageLoader';
 import { useAuth } from '../state';
 import type { OwnProfile, Preference } from '../types';
 
@@ -33,7 +34,7 @@ export default function ProfilePage() {
     setInterests(profile.interests);
   }, [profile]);
 
-  if (!profile || !meta) return <div className="spinner" />;
+  if (!profile || !meta) return <StageLoader label="Opening profile…" />;
 
   function toggleInterest(tag: string) {
     setInterests((current) =>
@@ -179,7 +180,7 @@ export default function ProfilePage() {
           <span className="muted">›</span>
         </Link>
 
-        <button className="btn" type="button" onClick={save} disabled={busy} style={{ marginTop: 16 }}>
+        <button className={`btn${busy ? ' is-busy' : ''}`} type="button" onClick={save} disabled={busy} style={{ marginTop: 16 }}>
           {busy ? 'Saving…' : 'Save changes'}
         </button>
         <div className={`save-state${status === 'Saved' ? ' ok' : ''}`}>

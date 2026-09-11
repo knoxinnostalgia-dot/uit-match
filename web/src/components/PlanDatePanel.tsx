@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
+import StageLoader from './StageLoader';
 import { firstName } from '../names';
 import { useAuth } from '../state';
 import type { BudgetKey, DateIdea, DatePlan, FreeTimeInfo, Profile, VenueKey } from '../types';
@@ -130,7 +131,7 @@ export default function PlanDatePanel({ matchId, them, freeTime, onClose, onProp
 
         <p className="section-title">Ideas for the two of you</p>
         {loading ? (
-          <div className="spinner" />
+          <StageLoader compact label="Finding ideas…" />
         ) : ideas.length === 0 ? (
           <p className="notice">Nothing fits that budget. Try raising it or picking another activity.</p>
         ) : (

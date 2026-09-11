@@ -41,17 +41,17 @@ export default function ChemistryOrbit({ interests, academic, age, freeTime }: P
         <circle cx="56" cy="56" r="34" className="orbit-track" />
         <circle cx="56" cy="56" r="26" className="orbit-track" />
         <circle cx="56" cy="56" r="18" className="orbit-track" />
-        <Arc index={0} value={interests} color="#c45c6a" />
-        <Arc index={1} value={academic} color="#d4896f" />
-        <Arc index={2} value={age} color="#e0a3ad" />
-        <Arc index={3} value={time} color="#2f6b4f" />
-        <circle cx="56" cy="56" r="7" fill="#c45c6a" />
+        <Arc index={0} value={interests} color="#ff4a12" />
+        <Arc index={1} value={academic} color="#ff8a48" />
+        <Arc index={2} value={age} color="#ffd6a3" />
+        <Arc index={3} value={time} color="#3d8f68" />
+        <circle cx="56" cy="56" r="7" fill="#ff4a12" />
       </svg>
       <ul className="orbit-legend">
-        <li><span style={{ background: '#c45c6a' }} /> Interests {interests}%</li>
-        <li><span style={{ background: '#d4896f' }} /> Academic {academic}%</li>
-        <li><span style={{ background: '#e0a3ad' }} /> Age {age}%</li>
-        <li><span style={{ background: '#2f6b4f' }} /> Free time {freeTime === null ? '—' : `${freeTime}%`}</li>
+        <li><span style={{ background: '#ff4a12' }} /> Interests {interests}%</li>
+        <li><span style={{ background: '#ff8a48' }} /> Academic {academic}%</li>
+        <li><span style={{ background: '#ffd6a3' }} /> Age {age}%</li>
+        <li><span style={{ background: '#3d8f68' }} /> Free time {freeTime === null ? '—' : `${freeTime}%`}</li>
       </ul>
     </div>
   );

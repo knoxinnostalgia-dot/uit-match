@@ -115,7 +115,7 @@ export default function SwipeCard({ card, isTop, depth, forcedExit, onExited, on
         style={{
           backgroundImage: photo
             ? `url(${photo})`
-            : 'linear-gradient(160deg, #3f3933, #1b1714)',
+            : 'linear-gradient(160deg, #3a1014, #12080a)',
         }}
       />
       <div className="card-shade" />

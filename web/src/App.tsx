@@ -1,6 +1,7 @@
+import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import SerendipityBanner from './components/SerendipityBanner';
-import BrandMark from './components/BrandMark';
+import StageLoader from './components/StageLoader';
 import NavBar from './components/NavBar';
 import AdmirersPage from './pages/AdmirersPage';
 import AuthPage from './pages/AuthPage';
@@ -12,20 +13,34 @@ import OnboardingPage from './pages/OnboardingPage';
 import ProfilePage from './pages/ProfilePage';
 import { useAuth } from './state';
 
+const Entrance = lazy(() => import('./entrance/Entrance'));
+
 export default function App() {
   const { ready, signedIn, profile } = useAuth();
 
   if (!ready) {
     return (
       <div className="boot">
-        <BrandMark size={48} />
-        <p>UIT Match</p>
-        <div className="spinner" />
+        <StageLoader label="UIT Match" />
       </div>
     );
   }
 
-  if (!signedIn) return <AuthPage />;
+  if (!signedIn) {
+    return (
+      <Suspense
+        fallback={
+          <div className="boot">
+            <StageLoader label="Opening UIT Match…" />
+          </div>
+        }
+      >
+        <Entrance>
+          <AuthPage />
+        </Entrance>
+      </Suspense>
+    );
+  }
   if (!profile?.isComplete) return <OnboardingPage />;
 
   return (

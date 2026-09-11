@@ -2,12 +2,11 @@ import { useState, type FormEvent } from 'react';
 import BrandMark from '../components/BrandMark';
 import { useAuth } from '../state';
 
-const CAMPUS =
-  'https://images.unsplash.com/photo-1516589178581-6cd7833ae3b2?auto=format&fit=crop&w=1800&q=80';
+const CAMPUS = '/auth/hero.png';
 const POLAROIDS = [
-  'https://images.unsplash.com/photo-1518199266791-5375a83190b7?auto=format&fit=crop&w=600&q=80',
-  'https://images.unsplash.com/photo-1511920170033-f8396924c348?auto=format&fit=crop&w=600&q=80',
-  'https://images.unsplash.com/photo-1529333166437-4c848294cea9?auto=format&fit=crop&w=600&q=80',
+  '/auth/polaroid-1.png',
+  '/auth/polaroid-2.png',
+  '/auth/polaroid-3.png',
 ];
 
 export default function AuthPage() {
@@ -114,7 +113,7 @@ export default function AuthPage() {
               />
             </div>
 
-            <button className="btn" type="submit" disabled={busy}>
+            <button className={`btn${busy ? ' is-busy' : ''}`} type="submit" disabled={busy}>
               {busy ? 'Please wait…' : mode === 'in' ? 'Sign in' : 'Create account'}
             </button>
           </form>

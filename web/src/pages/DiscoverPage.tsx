@@ -4,6 +4,7 @@ import ChemistryOrbit from '../components/ChemistryOrbit';
 import FateCard from '../components/FateCard';
 import MatchModal from '../components/MatchModal';
 import SparkSheet from '../components/SparkSheet';
+import StageLoader from '../components/StageLoader';
 import SwipeCard, { type SwipeDir } from '../components/SwipeCard';
 import { academicLabel, firstName } from '../names';
 import { useAuth } from '../state';
@@ -158,7 +159,7 @@ export default function DiscoverPage() {
         <div className="discover-stage">
           <div className="deck">
             {loading ? (
-              <div className="spinner" />
+              <StageLoader label="Finding classmates…" />
             ) : cards.length === 0 ? (
               <div className="empty-deck">
                 <span className="big">♥</span>

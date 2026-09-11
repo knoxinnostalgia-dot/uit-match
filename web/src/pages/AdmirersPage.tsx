@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
+import StageLoader from '../components/StageLoader';
 
 export default function AdmirersPage() {
   const [count, setCount] = useState(0);
@@ -28,7 +29,7 @@ export default function AdmirersPage() {
       </header>
 
       {loading ? (
-        <div className="spinner" />
+        <StageLoader label="Checking likes…" />
       ) : count === 0 ? (
         <div className="empty-panel">
           <span className="big">♥</span>

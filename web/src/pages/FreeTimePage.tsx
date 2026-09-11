@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import AvailabilityGrid, { cellId } from '../components/AvailabilityGrid';
+import StageLoader from '../components/StageLoader';
 import { useAuth } from '../state';
 import type { AvailabilityState, BudgetKey, SlotKey, VenueKey } from '../types';
 
@@ -69,7 +70,7 @@ export default function FreeTimePage() {
     };
   }, [cells, enabled, budget, venue, refreshProfile]);
 
-  if (!meta || loading) return <div className="spinner" />;
+  if (!meta || loading) return <StageLoader label="Loading timetable…" />;
 
   function setAll(predicate: (day: number, slot: SlotKey) => boolean) {
     const next = new Set<string>();

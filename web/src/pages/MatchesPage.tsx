@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
+import StageLoader from '../components/StageLoader';
 import { academicLabel, firstName, photoUrl } from '../names';
 import type { MatchSummary } from '../types';
 
@@ -45,7 +46,7 @@ export default function MatchesPage() {
       </header>
 
       {loading ? (
-        <div className="spinner" />
+        <StageLoader label="Opening matches…" />
       ) : matches.length === 0 ? (
         <div className="empty-panel">
           <span className="big">♥</span>

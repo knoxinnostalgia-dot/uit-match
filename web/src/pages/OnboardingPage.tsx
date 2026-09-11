@@ -4,6 +4,7 @@ import AcademicFields from '../components/AcademicFields';
 import AvailabilityGrid from '../components/AvailabilityGrid';
 import BrandMark from '../components/BrandMark';
 import ProfilePreview, { ageFrom } from '../components/ProfilePreview';
+import StageLoader from '../components/StageLoader';
 import { useAuth } from '../state';
 import type { AvailabilityState, Gender, OwnProfile, Preference, SlotKey } from '../types';
 
@@ -26,7 +27,13 @@ export default function OnboardingPage() {
   const [cells, setCells] = useState<Set<string>>(new Set());
   const [pendingPhotos, setPendingPhotos] = useState<{ file: File; preview: string }[]>([]);
 
-  if (!meta) return <div className="site"><div className="spinner" /></div>;
+  if (!meta) {
+    return (
+      <div className="boot">
+        <StageLoader label="UIT Match" />
+      </div>
+    );
+  }
 
   function toggleInterest(tag: string) {
     setInterests((current) =>
@@ -199,7 +206,7 @@ export default function OnboardingPage() {
               </div>
             </div>
 
-            <button className="btn" type="button" disabled={busy || !displayName || !birthdate} onClick={saveProfile}>
+            <button className={`btn${busy ? ' is-busy' : ''}`} type="button" disabled={busy || !displayName || !birthdate} onClick={saveProfile}>
               {busy ? 'Saving…' : 'Continue'}
             </button>
           </div>
@@ -236,7 +243,7 @@ export default function OnboardingPage() {
             </p>
 
             <div style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <button className="btn" type="button" disabled={busy || cells.size === 0} onClick={() => finish(true)}>
+              <button className={`btn${busy ? ' is-busy' : ''}`} type="button" disabled={busy || cells.size === 0} onClick={() => finish(true)}>
                 {busy ? 'Saving…' : `Save ${cells.size} free ${cells.size === 1 ? 'period' : 'periods'}`}
               </button>
               <button className="btn btn-ghost" type="button" disabled={busy} onClick={() => finish(false)}>

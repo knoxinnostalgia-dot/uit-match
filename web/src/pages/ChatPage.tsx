@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import PlanDatePanel from '../components/PlanDatePanel';
 import SafetySheet from '../components/SafetySheet';
+import StageLoader from '../components/StageLoader';
 import { academicLabel, firstName, photoUrl } from '../names';
 import { useAuth } from '../state';
 import type { DatePlan, MatchDetail, Message } from '../types';
@@ -101,7 +102,7 @@ export default function ChatPage() {
     setSearchParams(next, { replace: true });
   }
 
-  if (!detail) return <div className="spinner" />;
+  if (!detail) return <StageLoader label="Opening chat…" />;
 
   const given = firstName(detail.profile.displayName);
   const overlap = detail.freeTime.available ? detail.freeTime.overlapCount : 0;
@@ -294,7 +295,7 @@ export default function ChatPage() {
             placeholder={`Message ${given}…`}
             maxLength={2000}
           />
-          <button className="send" type="submit" disabled={sending || !draft.trim()} aria-label="Send">➤</button>
+          <button className={`send${sending ? ' is-busy' : ''}`} type="submit" disabled={sending || !draft.trim()} aria-label="Send">➤</button>
         </form>
           </>
         )}
