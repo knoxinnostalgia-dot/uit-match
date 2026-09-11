@@ -4,8 +4,9 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 export const ROOT_DIR = path.resolve(here, '..');
-export const DATA_DIR = path.join(ROOT_DIR, 'data');
-export const UPLOADS_DIR = path.join(ROOT_DIR, 'uploads');
+const ephemeralRoot = process.env.VERCEL ? '/tmp/uit-match' : ROOT_DIR;
+export const DATA_DIR = path.join(ephemeralRoot, 'data');
+export const UPLOADS_DIR = path.join(ephemeralRoot, 'uploads');
 export const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, 'uitmatch.db');
 
 export const PORT = Number(process.env.PORT || 4000);

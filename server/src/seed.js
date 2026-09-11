@@ -20,7 +20,8 @@ if (RESET) {
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
-const { run, get } = await import('./db.js');
+const { initDb, run, get } = await import('./db.js');
+await initDb();
 
 for (const table of [
   'date_plans',

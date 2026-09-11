@@ -18,7 +18,7 @@ import {
   UPLOADS_DIR,
   VENUES,
 } from './config.js';
-import './db.js';
+import { initDb } from './db.js';
 import { authRouter } from './routes/auth.js';
 import { discoverRouter } from './routes/discover.js';
 import { matchesRouter } from './routes/matches.js';
@@ -71,7 +71,13 @@ app.use((err, _req, res, _next) => {
   res.status(status).json({ error: err.message || 'Something went wrong.' });
 });
 
-app.listen(PORT, () => {
-  console.log(`UIT Match API listening on http://localhost:${PORT}`);
-  console.log(`Campus domains: ${ALLOWED_EMAIL_DOMAINS.join(', ')}`);
-});
+await initDb();
+
+export default app;
+
+if (!process.env.VERCEL) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`UIT Match API listening on http://localhost:${PORT}`);
+    console.log(`Campus domains: ${ALLOWED_EMAIL_DOMAINS.join(', ')}`);
+  });
+}

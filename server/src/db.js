@@ -2,21 +2,74 @@ import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { DATA_DIR, DB_PATH, UPLOADS_DIR } from './config.js';
 
-fs.mkdirSync(DATA_DIR, { recursive: true });
-fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+const BLOB_PATH = 'data/uitmatch.db';
+let persistTimer;
+let ready = false;
 
-export const db = new DatabaseSync(DB_PATH);
-
-db.exec('PRAGMA journal_mode = WAL');
-db.exec('PRAGMA foreign_keys = ON');
+/** Opened in initDb(). Live-bound so route modules can import it at load time. */
+export let db;
 
 export const nowIso = () => new Date().toISOString();
 
 /** node:sqlite can hand back BigInt for rowids depending on the value. */
 export const toNumber = (value) => (typeof value === 'bigint' ? Number(value) : value);
 
+export function schedulePersist() {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) return;
+  clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    persistToBlob().catch((err) => console.error('Could not save database:', err.message));
+  }, 500);
+}
+
+async function persistToBlob() {
+  if (!process.env.BLOB_READ_WRITE_TOKEN || !db) return;
+  db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+  const { put } = await import('@vercel/blob');
+  await put(BLOB_PATH, fs.readFileSync(DB_PATH), {
+    access: 'private',
+    addRandomSuffix: false,
+    allowOverwrite: true,
+    cacheControlMaxAge: 60,
+    token: process.env.BLOB_READ_WRITE_TOKEN,
+  });
+}
+
+async function restoreFromBlob() {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) return;
+  try {
+    const { get } = await import('@vercel/blob');
+    const result = await get(BLOB_PATH, {
+      access: 'private',
+      useCache: false,
+      token: process.env.BLOB_READ_WRITE_TOKEN,
+    });
+    if (!result?.stream) return;
+    const chunks = [];
+    for await (const chunk of result.stream) chunks.push(chunk);
+    fs.writeFileSync(DB_PATH, Buffer.concat(chunks));
+    console.log('Restored student database from Blob.');
+  } catch (err) {
+    console.warn('Starting with an empty database:', err.message);
+  }
+}
+
+export async function initDb() {
+  if (ready && db) return db;
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  await restoreFromBlob();
+  db = new DatabaseSync(DB_PATH);
+  db.exec(`PRAGMA journal_mode = ${process.env.VERCEL ? 'DELETE' : 'WAL'}`);
+  db.exec('PRAGMA foreign_keys = ON');
+  applySchema();
+  ready = true;
+  return db;
+}
+
 export function run(sql, ...params) {
   const result = db.prepare(sql).run(...params);
+  schedulePersist();
   return {
     changes: toNumber(result.changes),
     lastInsertRowid: toNumber(result.lastInsertRowid),
@@ -36,7 +89,8 @@ export function pairKey(a, b) {
   return a < b ? [a, b] : [b, a];
 }
 
-db.exec(`
+function applySchema() {
+  db.exec(`
 CREATE TABLE IF NOT EXISTS users (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
   email          TEXT NOT NULL UNIQUE,
@@ -172,3 +226,4 @@ ensureColumn('swipes', 'spark_note', 'TEXT');
 ensureColumn('swipes', 'spark_photo', 'INTEGER');
 
 db.exec(`UPDATE profiles SET study_year = 5 WHERE study_year IS NOT NULL AND study_year > 5`);
+}

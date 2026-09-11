@@ -1,5 +1,5 @@
 import { DAYS, SLOTS, SLOT_KEYS } from './config.js';
-import { all, db, get, run } from './db.js';
+import { all, db, get, run, schedulePersist } from './db.js';
 
 const SLOT_LABEL = Object.fromEntries(SLOTS.map((s) => [s.key, s.short]));
 const SLOT_RANGE = Object.fromEntries(SLOTS.map((s) => [s.key, s.range]));
@@ -42,6 +42,7 @@ export function replaceAvailability(userId, cells) {
     const insert = db.prepare('INSERT INTO availability (user_id, day, slot) VALUES (?, ?, ?)');
     for (const { day, slot } of unique.values()) insert.run(userId, day, slot);
     db.exec('COMMIT');
+    schedulePersist();
   } catch (err) {
     db.exec('ROLLBACK');
     throw err;
