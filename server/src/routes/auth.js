@@ -47,7 +47,12 @@ authRouter.post('/login', async (req, res) => {
   const password = req.body?.password;
 
   const user = get('SELECT * FROM users WHERE email = ?', email);
-  const ok = user && typeof password === 'string' && (await verifyPassword(password, user.password_hash));
+  if (!user) {
+    return res.status(401).json({
+      error: 'No account with that email yet. If you just created one, wait a moment and try again — or create the account once more.',
+    });
+  }
+  const ok = typeof password === 'string' && (await verifyPassword(password, user.password_hash));
   if (!ok) return res.status(401).json({ error: 'Email or password is incorrect.' });
 
   const token = createSession(user.id);

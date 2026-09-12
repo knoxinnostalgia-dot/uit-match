@@ -3,8 +3,10 @@ import { DatabaseSync } from 'node:sqlite';
 import { DATA_DIR, DB_PATH, UPLOADS_DIR } from './config.js';
 
 const BLOB_PATH = 'data/uitmatch.db';
-let persistTimer;
 let ready = false;
+let dirty = false;
+let blobEtag = null;
+let requestLock = Promise.resolve();
 
 /** Opened in initDb(). Live-bound so route modules can import it at load time. */
 export let db;
@@ -14,62 +16,133 @@ export const nowIso = () => new Date().toISOString();
 /** node:sqlite can hand back BigInt for rowids depending on the value. */
 export const toNumber = (value) => (typeof value === 'bigint' ? Number(value) : value);
 
+export function usesBlob() {
+  return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+}
+
+export function persistenceMode() {
+  if (usesBlob()) return 'blob';
+  if (process.env.VERCEL) return 'ephemeral';
+  return 'local';
+}
+
+export function markDirty() {
+  dirty = true;
+}
+
+/** @deprecated Use markDirty(); the request middleware saves the file. */
 export function schedulePersist() {
-  if (!process.env.BLOB_READ_WRITE_TOKEN) return;
-  clearTimeout(persistTimer);
-  persistTimer = setTimeout(() => {
-    persistToBlob().catch((err) => console.error('Could not save database:', err.message));
-  }, 500);
+  markDirty();
+}
+
+function blobToken() {
+  return process.env.BLOB_READ_WRITE_TOKEN;
+}
+
+function closeDb() {
+  if (!db) return;
+  try {
+    db.close();
+  } catch {
+    // Already closed between overlapping requests.
+  }
+  db = undefined;
+  ready = false;
+}
+
+function openDb() {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  db = new DatabaseSync(DB_PATH);
+  db.exec(`PRAGMA journal_mode = ${process.env.VERCEL ? 'DELETE' : 'WAL'}`);
+  db.exec('PRAGMA foreign_keys = ON');
+  applySchema();
+  ready = true;
+  dirty = false;
+  return db;
 }
 
 async function persistToBlob() {
-  if (!process.env.BLOB_READ_WRITE_TOKEN || !db) return;
+  if (!usesBlob() || !db) return;
   db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
-  const { put } = await import('@vercel/blob');
-  await put(BLOB_PATH, fs.readFileSync(DB_PATH), {
-    access: 'private',
-    addRandomSuffix: false,
-    allowOverwrite: true,
-    cacheControlMaxAge: 60,
-    token: process.env.BLOB_READ_WRITE_TOKEN,
-  });
+  const { put, BlobPreconditionFailedError } = await import('@vercel/blob');
+  try {
+    const result = await put(BLOB_PATH, fs.readFileSync(DB_PATH), {
+      access: 'private',
+      addRandomSuffix: false,
+      allowOverwrite: true,
+      cacheControlMaxAge: 60,
+      token: blobToken(),
+      ...(blobEtag ? { ifMatch: blobEtag } : {}),
+    });
+    blobEtag = result.etag || blobEtag;
+    dirty = false;
+  } catch (err) {
+    if (err instanceof BlobPreconditionFailedError) {
+      const conflict = new Error('Could not save your account. Please try again.');
+      conflict.status = 503;
+      throw conflict;
+    }
+    throw err;
+  }
 }
 
 async function restoreFromBlob() {
-  if (!process.env.BLOB_READ_WRITE_TOKEN) return;
+  if (!usesBlob()) return;
   try {
     const { get } = await import('@vercel/blob');
     const result = await get(BLOB_PATH, {
       access: 'private',
       useCache: false,
-      token: process.env.BLOB_READ_WRITE_TOKEN,
+      token: blobToken(),
     });
-    if (!result?.stream) return;
+    if (!result?.stream || result.statusCode !== 200) return;
     const chunks = [];
     for await (const chunk of result.stream) chunks.push(chunk);
     fs.writeFileSync(DB_PATH, Buffer.concat(chunks));
-    console.log('Restored student database from Blob.');
+    blobEtag = result.blob?.etag || blobEtag;
   } catch (err) {
+    if (err?.constructor?.name === 'BlobNotFoundError') return;
     console.warn('Starting with an empty database:', err.message);
   }
 }
 
 export async function initDb() {
   if (ready && db) return db;
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
   await restoreFromBlob();
-  db = new DatabaseSync(DB_PATH);
-  db.exec(`PRAGMA journal_mode = ${process.env.VERCEL ? 'DELETE' : 'WAL'}`);
-  db.exec('PRAGMA foreign_keys = ON');
-  applySchema();
-  ready = true;
-  return db;
+  return openDb();
+}
+
+/**
+ * On Vercel, each serverless instance has its own /tmp sqlite file.
+ * Reload from Blob at the start of every request so signup on instance A
+ * is visible to login on instance B.
+ */
+export async function beginRequest() {
+  if (!usesBlob()) return initDb();
+  closeDb();
+  await restoreFromBlob();
+  return openDb();
+}
+
+export async function persistIfDirty() {
+  if (!usesBlob() || !dirty) return;
+  await persistToBlob();
+}
+
+/** One in-flight request per instance so we never close sqlite under another handler. */
+export function runExclusive(work) {
+  const run = requestLock.then(work, work);
+  requestLock = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
 }
 
 export function run(sql, ...params) {
   const result = db.prepare(sql).run(...params);
-  schedulePersist();
+  markDirty();
   return {
     changes: toNumber(result.changes),
     lastInsertRowid: toNumber(result.lastInsertRowid),

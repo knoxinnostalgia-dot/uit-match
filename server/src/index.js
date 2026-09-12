@@ -18,7 +18,7 @@ import {
   UPLOADS_DIR,
   VENUES,
 } from './config.js';
-import { initDb } from './db.js';
+import { beginRequest, initDb, persistIfDirty, persistenceMode, runExclusive, usesBlob } from './db.js';
 import { authRouter } from './routes/auth.js';
 import { discoverRouter } from './routes/discover.js';
 import { matchesRouter } from './routes/matches.js';
@@ -30,7 +30,55 @@ const app = express();
 app.use(express.json({ limit: '1mb' }));
 app.use('/uploads', express.static(UPLOADS_DIR, { maxAge: '7d' }));
 
-app.get('/api/health', (_req, res) => res.json({ ok: true }));
+/**
+ * Reload sqlite from Blob, then save it again before the response leaves.
+ * Without this, signup can land on one serverless instance and login on another
+ * that never saw the new account.
+ */
+app.use((req, res, next) => {
+  if (!usesBlob()) {
+    initDb().then(() => next(), next);
+    return;
+  }
+
+  runExclusive(async () => {
+    await beginRequest();
+    await new Promise((resolve, reject) => {
+      const origEnd = res.end.bind(res);
+      let finished = false;
+      const finish = (err) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(stuck);
+        if (err) reject(err);
+        else resolve();
+      };
+      const stuck = setTimeout(() => finish(), 20_000);
+      res.end = function (...args) {
+        persistIfDirty()
+          .then(() => {
+            origEnd(...args);
+            finish();
+          })
+          .catch((err) => {
+            console.error('Could not save database:', err.message);
+            if (!res.headersSent) {
+              res.statusCode = err.status || 503;
+              res.setHeader('content-type', 'application/json; charset=utf-8');
+              origEnd(JSON.stringify({ error: err.message || 'Could not save your account. Please try again.' }));
+            } else {
+              origEnd(...args);
+            }
+            finish();
+          });
+        return res;
+      };
+      next();
+    });
+  }).catch(next);
+});
+
+app.get('/api/health', (_req, res) => res.json({ ok: true, persistence: persistenceMode() }));
 
 /** Everything the client needs to render pickers, kept in one place. */
 app.get('/api/meta', (_req, res) => {
@@ -72,6 +120,12 @@ app.use((err, _req, res, _next) => {
 });
 
 await initDb();
+
+if (process.env.VERCEL && !usesBlob()) {
+  console.error(
+    'BLOB_READ_WRITE_TOKEN is missing. Accounts created on this deployment will not survive the next request.',
+  );
+}
 
 export default app;
 
