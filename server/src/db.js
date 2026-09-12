@@ -3,9 +3,11 @@ import { DatabaseSync } from 'node:sqlite';
 import { DATA_DIR, DB_PATH, UPLOADS_DIR } from './config.js';
 
 const BLOB_PATH = 'data/uitmatch.db';
+const USERS_BLOB = 'data/users.json';
 let ready = false;
 let dirty = false;
 let blobEtag = null;
+let usersEtag = null;
 let requestLock = Promise.resolve();
 
 /** Opened in initDb(). Live-bound so route modules can import it at load time. */
@@ -17,7 +19,10 @@ export const nowIso = () => new Date().toISOString();
 export const toNumber = (value) => (typeof value === 'bigint' ? Number(value) : value);
 
 export function usesBlob() {
-  return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+  return Boolean(
+    process.env.BLOB_READ_WRITE_TOKEN ||
+      (process.env.VERCEL && (process.env.BLOB_STORE_ID || process.env.VERCEL_OIDC_TOKEN)),
+  );
 }
 
 export function persistenceMode() {
@@ -35,8 +40,8 @@ export function schedulePersist() {
   markDirty();
 }
 
-function blobToken() {
-  return process.env.BLOB_READ_WRITE_TOKEN;
+function blobAuth() {
+  return process.env.BLOB_READ_WRITE_TOKEN ? { token: process.env.BLOB_READ_WRITE_TOKEN } : {};
 }
 
 function closeDb() {
@@ -72,7 +77,7 @@ async function persistToBlob() {
       addRandomSuffix: false,
       allowOverwrite: true,
       cacheControlMaxAge: 60,
-      token: blobToken(),
+      ...blobAuth(),
       ...(blobEtag ? { ifMatch: blobEtag } : {}),
     });
     blobEtag = result.etag || blobEtag;
@@ -94,7 +99,7 @@ async function restoreFromBlob() {
     const result = await get(BLOB_PATH, {
       access: 'private',
       useCache: false,
-      token: blobToken(),
+      ...blobAuth(),
     });
     if (!result?.stream || result.statusCode !== 200) return;
     const chunks = [];
@@ -110,19 +115,177 @@ async function restoreFromBlob() {
 export async function initDb() {
   if (ready && db) return db;
   await restoreFromBlob();
-  return openDb();
+  openDb();
+  await pullAccounts();
+  return db;
 }
 
 /**
  * On Vercel, each serverless instance has its own /tmp sqlite file.
- * Reload from Blob at the start of every request so signup on instance A
- * is visible to login on instance B.
+ * Reload accounts from Blob at the start of every request so signup on
+ * instance A is visible to login on instance B.
  */
 export async function beginRequest() {
   if (!usesBlob()) return initDb();
   closeDb();
   await restoreFromBlob();
-  return openDb();
+  openDb();
+  await pullAccounts();
+  return db;
+}
+
+async function readStream(stream) {
+  const chunks = [];
+  for await (const chunk of stream) chunks.push(chunk);
+  return Buffer.concat(chunks.map((part) => (Buffer.isBuffer(part) ? part : Buffer.from(part))));
+}
+
+function mergeAccounts(remote, local) {
+  const byEmail = new Map();
+  for (const row of remote) {
+    if (!row?.email) continue;
+    byEmail.set(row.email, {
+      id: toNumber(row.id),
+      email: row.email,
+      password_hash: row.password_hash,
+      created_at: row.created_at,
+    });
+  }
+  const usedIds = new Set([...byEmail.values()].map((row) => row.id));
+  for (const row of local) {
+    if (!row?.email) continue;
+    if (byEmail.has(row.email)) {
+      const prev = byEmail.get(row.email);
+      byEmail.set(row.email, {
+        ...prev,
+        password_hash: row.password_hash || prev.password_hash,
+      });
+      continue;
+    }
+    let id = toNumber(row.id);
+    if (!id || usedIds.has(id)) {
+      id = (usedIds.size ? Math.max(...usedIds) : 0) + 1;
+    }
+    usedIds.add(id);
+    byEmail.set(row.email, {
+      id,
+      email: row.email,
+      password_hash: row.password_hash,
+      created_at: row.created_at,
+    });
+  }
+  return [...byEmail.values()];
+}
+
+function applyAccountRows(rows) {
+  if (!db || !rows.length) return;
+  for (const row of rows) {
+    const id = toNumber(row.id);
+    if (!id || !row.email || !row.password_hash) continue;
+    try {
+      db.prepare('DELETE FROM users WHERE email = ? AND id != ?').run(row.email, id);
+    } catch {
+      // Keep the existing row if a foreign key blocks the cleanup.
+    }
+    const existing = db.prepare('SELECT id FROM users WHERE id = ?').get(id);
+    if (existing) {
+      db.prepare(
+        'UPDATE users SET email = ?, password_hash = ?, created_at = COALESCE(?, created_at) WHERE id = ?',
+      ).run(row.email, row.password_hash, row.created_at || null, id);
+    } else {
+      db.prepare(
+        'INSERT INTO users (id, email, password_hash, created_at) VALUES (?, ?, ?, ?)',
+      ).run(id, row.email, row.password_hash, row.created_at || nowIso());
+    }
+  }
+  const max = toNumber(get('SELECT MAX(id) AS m FROM users')?.m) || 0;
+  const seq = get("SELECT seq FROM sqlite_sequence WHERE name = 'users'");
+  if (seq) {
+    db.prepare("UPDATE sqlite_sequence SET seq = ? WHERE name = 'users'").run(Math.max(toNumber(seq.seq) || 0, max));
+  } else if (max) {
+    try {
+      db.prepare('INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)').run('users', max);
+    } catch {
+      // sqlite_sequence is only present after AUTOINCREMENT inserts.
+    }
+  }
+}
+
+async function readUsersBlob() {
+  const { get } = await import('@vercel/blob');
+  const result = await get(USERS_BLOB, {
+    access: 'private',
+    useCache: false,
+    ...blobAuth(),
+  });
+  if (!result?.stream || result.statusCode !== 200) return { users: [] };
+  usersEtag = result.blob?.etag || usersEtag;
+  const parsed = JSON.parse((await readStream(result.stream)).toString('utf8'));
+  const users = Array.isArray(parsed) ? parsed : parsed?.users;
+  return { users: Array.isArray(users) ? users : [] };
+}
+
+export async function pullAccounts() {
+  if (!usesBlob()) return;
+  try {
+    const { users } = await readUsersBlob();
+    applyAccountRows(users);
+  } catch (err) {
+    if (err?.constructor?.name === 'BlobNotFoundError') return;
+    console.warn('Could not load accounts:', err.message);
+  }
+}
+
+/** Wait until student accounts are in Blob before telling the browser login succeeded. */
+export async function persistAccounts() {
+  if (!usesBlob()) {
+    if (process.env.VERCEL) {
+      const err = new Error('Account storage is not connected. Connect Vercel Blob and redeploy.');
+      err.status = 503;
+      throw err;
+    }
+    return;
+  }
+
+  const local = all('SELECT id, email, password_hash, created_at FROM users').map((row) => ({
+    id: toNumber(row.id),
+    email: row.email,
+    password_hash: row.password_hash,
+    created_at: row.created_at,
+  }));
+
+  const { put, BlobPreconditionFailedError } = await import('@vercel/blob');
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    let remote = [];
+    try {
+      ({ users: remote } = await readUsersBlob());
+    } catch (err) {
+      if (err?.constructor?.name !== 'BlobNotFoundError') throw err;
+      usersEtag = null;
+    }
+    const merged = mergeAccounts(remote, local);
+    try {
+      const result = await put(USERS_BLOB, JSON.stringify({ users: merged }), {
+        access: 'private',
+        addRandomSuffix: false,
+        allowOverwrite: true,
+        cacheControlMaxAge: 60,
+        contentType: 'application/json',
+        ...blobAuth(),
+        ...(usersEtag ? { ifMatch: usersEtag } : {}),
+      });
+      usersEtag = result.etag || usersEtag;
+      applyAccountRows(merged);
+      return merged;
+    } catch (err) {
+      if (err instanceof BlobPreconditionFailedError) continue;
+      throw err;
+    }
+  }
+
+  const err = new Error('Could not save your account. Please try again.');
+  err.status = 503;
+  throw err;
 }
 
 export async function persistIfDirty() {

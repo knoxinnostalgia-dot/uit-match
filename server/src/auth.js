@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { promisify } from 'node:util';
 import { ALLOWED_EMAIL_DOMAINS, SESSION_TTL_DAYS } from './config.js';
-import { db, get, nowIso, run } from './db.js';
+import { db, get, nowIso, pullAccounts, run } from './db.js';
 
 const scrypt = promisify(crypto.scrypt);
 const KEY_LEN = 64;
@@ -41,7 +41,10 @@ export function checkCampusEmail(email) {
 }
 
 function sessionSecret() {
-  return process.env.SESSION_SECRET || process.env.BLOB_READ_WRITE_TOKEN || 'uit-match-local-dev';
+  // Must be identical on every Vercel instance. Do not use rotating OIDC tokens.
+  if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
+  if (process.env.VERCEL_PROJECT_ID) return `uit-match:${process.env.VERCEL_PROJECT_ID}`;
+  return 'uit-match-local-dev';
 }
 
 function signBytes(payload) {
@@ -63,20 +66,22 @@ function readSignedSession(token) {
   if (!sig || !hmacEqual(signBytes(payload), sig)) return null;
   try {
     const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-    if (!Number.isInteger(data.sub) || typeof data.exp !== 'number' || data.exp < Date.now()) {
+    const sub = Number(data.sub);
+    if (!Number.isInteger(sub) || typeof data.exp !== 'number' || data.exp < Date.now()) {
       return null;
     }
-    return data;
+    return { sub, email: typeof data.email === 'string' ? data.email : null, exp: data.exp };
   } catch {
     return null;
   }
 }
 
 /** Signed token so a later request can log you in even if the sessions table was lost. */
-export function createSession(userId) {
+export function createSession(userId, email) {
   const payload = Buffer.from(
     JSON.stringify({
       sub: Number(userId),
+      email: normalizeEmail(email),
       exp: Date.now() + SESSION_TTL_DAYS * 86400_000,
     }),
     'utf8',
@@ -94,8 +99,11 @@ function readToken(req) {
   return header.startsWith('Bearer ') ? header.slice(7).trim() : null;
 }
 
-function loadAuthedUser(userId) {
-  return get('SELECT id, email, created_at FROM users WHERE id = ?', userId);
+function loadAuthedUser(signed) {
+  const byId = get('SELECT id, email, created_at FROM users WHERE id = ?', signed.sub);
+  if (byId) return byId;
+  if (signed.email) return get('SELECT id, email, created_at FROM users WHERE email = ?', signed.email);
+  return undefined;
 }
 
 function touchUser(userId) {
@@ -103,33 +111,41 @@ function touchUser(userId) {
 }
 
 /** Populates req.user, or 401s. */
-export function requireAuth(req, res, next) {
-  const token = readToken(req);
-  if (!token) return res.status(401).json({ error: 'Sign in to continue.' });
+export async function requireAuth(req, res, next) {
+  try {
+    const token = readToken(req);
+    if (!token) return res.status(401).json({ error: 'Sign in to continue.' });
 
-  const signed = readSignedSession(token);
-  if (signed) {
-    const user = loadAuthedUser(signed.sub);
+    const signed = readSignedSession(token);
+    if (signed) {
+      let user = loadAuthedUser(signed);
+      if (!user) {
+        await pullAccounts();
+        user = loadAuthedUser(signed);
+      }
+      if (!user) return res.status(401).json({ error: 'Session expired. Sign in again.' });
+      touchUser(user.id);
+      req.user = user;
+      req.token = token;
+      return next();
+    }
+
+    const session = get('SELECT * FROM sessions WHERE token = ?', token);
+    if (!session) return res.status(401).json({ error: 'Session expired. Sign in again.' });
+
+    if (new Date(session.expires_at).getTime() < Date.now()) {
+      destroySession(token);
+      return res.status(401).json({ error: 'Session expired. Sign in again.' });
+    }
+
+    const user = loadAuthedUser({ sub: session.user_id, email: null });
     if (!user) return res.status(401).json({ error: 'Session expired. Sign in again.' });
+
     touchUser(user.id);
     req.user = user;
     req.token = token;
-    return next();
+    next();
+  } catch (err) {
+    next(err);
   }
-
-  const session = get('SELECT * FROM sessions WHERE token = ?', token);
-  if (!session) return res.status(401).json({ error: 'Session expired. Sign in again.' });
-
-  if (new Date(session.expires_at).getTime() < Date.now()) {
-    destroySession(token);
-    return res.status(401).json({ error: 'Session expired. Sign in again.' });
-  }
-
-  const user = loadAuthedUser(session.user_id);
-  if (!user) return res.status(401).json({ error: 'Session expired. Sign in again.' });
-
-  touchUser(user.id);
-  req.user = user;
-  req.token = token;
-  next();
 }

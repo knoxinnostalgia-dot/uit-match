@@ -8,7 +8,7 @@ import {
   requireAuth,
   verifyPassword,
 } from '../auth.js';
-import { get, nowIso, run } from '../db.js';
+import { get, nowIso, persistAccounts, run } from '../db.js';
 import { ownProfile } from '../util.js';
 
 export const authRouter = Router();
@@ -31,15 +31,23 @@ authRouter.post('/signup', async (req, res) => {
   if (existing) return res.status(409).json({ error: 'That email is already registered. Try signing in.' });
 
   const passwordHash = await hashPassword(password);
-  const { lastInsertRowid } = run(
+  run(
     'INSERT INTO users (email, password_hash, created_at) VALUES (?, ?, ?)',
     check.email,
     passwordHash,
     nowIso(),
   );
-
-  const token = createSession(lastInsertRowid);
-  res.status(201).json({ token, ...loadMe(lastInsertRowid, check.email) });
+  try {
+    await persistAccounts();
+  } catch (err) {
+    return res.status(err.status || 503).json({ error: err.message || 'Could not save your account. Please try again.' });
+  }
+  const created = get('SELECT id, email FROM users WHERE email = ?', check.email);
+  if (!created) {
+    return res.status(503).json({ error: 'Could not save your account. Please try again.' });
+  }
+  const token = createSession(created.id, created.email);
+  res.status(201).json({ token, ...loadMe(created.id, created.email) });
 });
 
 authRouter.post('/login', async (req, res) => {
@@ -55,8 +63,17 @@ authRouter.post('/login', async (req, res) => {
   const ok = typeof password === 'string' && (await verifyPassword(password, user.password_hash));
   if (!ok) return res.status(401).json({ error: 'Email or password is incorrect.' });
 
-  const token = createSession(user.id);
-  res.json({ token, ...loadMe(user.id, user.email) });
+  try {
+    await persistAccounts();
+  } catch (err) {
+    return res.status(err.status || 503).json({ error: err.message || 'Could not save your account. Please try again.' });
+  }
+  const saved = get('SELECT id, email FROM users WHERE email = ?', email);
+  if (!saved) {
+    return res.status(503).json({ error: 'Could not save your account. Please try again.' });
+  }
+  const token = createSession(saved.id, saved.email);
+  res.json({ token, ...loadMe(saved.id, saved.email) });
 });
 
 authRouter.post('/logout', requireAuth, (req, res) => {
