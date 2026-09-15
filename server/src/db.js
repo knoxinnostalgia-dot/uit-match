@@ -18,11 +18,16 @@ export const nowIso = () => new Date().toISOString();
 /** node:sqlite can hand back BigInt for rowids depending on the value. */
 export const toNumber = (value) => (typeof value === 'bigint' ? Number(value) : value);
 
+function blobTokenFromEnv() {
+  if (process.env.BLOB_READ_WRITE_TOKEN) return process.env.BLOB_READ_WRITE_TOKEN;
+  for (const [key, value] of Object.entries(process.env)) {
+    if (key.endsWith('BLOB_READ_WRITE_TOKEN') && value) return value;
+  }
+  return '';
+}
+
 export function usesBlob() {
-  return Boolean(
-    process.env.BLOB_READ_WRITE_TOKEN ||
-      (process.env.VERCEL && (process.env.BLOB_STORE_ID || process.env.VERCEL_OIDC_TOKEN)),
-  );
+  return Boolean(blobTokenFromEnv() || process.env.BLOB_STORE_ID);
 }
 
 export function persistenceMode() {
@@ -41,7 +46,8 @@ export function schedulePersist() {
 }
 
 function blobAuth() {
-  return process.env.BLOB_READ_WRITE_TOKEN ? { token: process.env.BLOB_READ_WRITE_TOKEN } : {};
+  const token = blobTokenFromEnv();
+  return token ? { token } : {};
 }
 
 function closeDb() {
@@ -240,7 +246,9 @@ export async function pullAccounts() {
 export async function persistAccounts() {
   if (!usesBlob()) {
     if (process.env.VERCEL) {
-      const err = new Error('Account storage is not connected. Connect Vercel Blob and redeploy.');
+      const err = new Error(
+        'This live site cannot save accounts yet. In Vercel open uit-match → Storage → Connect Blob (empty prefix) → Redeploy.',
+      );
       err.status = 503;
       throw err;
     }

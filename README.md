@@ -2,7 +2,15 @@
 
 A campus-only dating **website** for the **University of Information Technology**. Real students only — no fake profiles. Match around the actual UIT lecture timetable (six periods plus lunch).
 
-![Discover](docs/screenshots/02-discover.png)
+Live site: [https://uit-match.vercel.app](https://uit-match.vercel.app)
+
+<p align="center">
+  <img src="web/public/entrance/heart.png" width="32%" alt="Cinematic intro heart" />
+  <img src="web/public/entrance/handshake.png" width="32%" alt="Intro handshake" />
+  <img src="web/public/auth/hero.png" width="32%" alt="Campus sign-in" />
+</p>
+
+The signed-out site opens on a dark ember intro (Find / Love, then a campus handshake), then university-email sign in. The rest of the app uses the same near-black and ember look — not the old pink mockups.
 
 ## Quick start
 
@@ -29,13 +37,7 @@ frontend from the API server on :4000).
 ## Free Time Match
 
 Students fill in the UIT lecture grid — six periods plus lunch — marking when they have no class.
-only the overlap.
-
-<p align="center">
-  <img src="docs/screenshots/04-free-time.png" width="32%" alt="Weekly availability grid" />
-  <img src="docs/screenshots/03-its-a-match.png" width="32%" alt="Match with overlapping free time" />
-  <img src="docs/screenshots/07-plan-a-date.png" width="32%" alt="Plan a date" />
-</p>
+Only the overlap is ever shown to someone else.
 
 ### On a profile card
 
@@ -94,7 +96,7 @@ Two workspaces. The server has two runtime dependencies; the database is Node's 
 server/src
   config.js          domains, majors, interests, days, slots, activities, budgets
   db.js              schema + additive migrations
-  auth.js            scrypt hashing, campus email check, token sessions
+  auth.js            scrypt hashing, campus email check, signed sessions
   freetime.js        timetable storage, overlap intersection, privacy tiers
   compatibility.js   scoring + the chips shown on a card
   dateideas.js       activity catalogue + ranking
@@ -105,6 +107,7 @@ web/src
   pages/             AuthPage · OnboardingPage · DiscoverPage · MatchesPage
                      ChatPage · FreeTimePage · ProfilePage
   components/        SwipeCard · MatchModal · AvailabilityGrid · PlanDatePanel · NavBar
+  entrance/          cinematic intro
 ```
 
 Free Time Match was added to the existing schema additively — two new tables (`availability`,
@@ -131,5 +134,6 @@ restructured.
 ## Known limitations
 
 This is an MVP. Chat is short-polled rather than websocket-driven; email addresses are trusted after
-the domain check rather than verified with a confirmation link; chat is short-polled rather than
-websocket-driven; and photos are stored on local disk.
+the domain check rather than verified with a confirmation link; and photos are stored on disk.
+The live Vercel deployment needs Blob storage connected with `BLOB_READ_WRITE_TOKEN` so accounts
+survive across requests.
