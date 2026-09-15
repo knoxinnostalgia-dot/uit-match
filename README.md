@@ -4,10 +4,7 @@ A campus-only dating **website** for the **University of Information Technology*
 
 Live site: [https://uit-match.vercel.app](https://uit-match.vercel.app)
 
-<p align="center">
-  <img src="web/public/entrance/heart.png" width="32%" alt="Cinematic intro heart" />
-  <img src="web/public/entrance/handshake.png" width="32%" alt="Intro handshake" />
-  <img src="web/public/auth/hero.png" width="32%" alt="Campus sign-in" />
+
 </p>
 
 The signed-out site opens on a dark ember intro (Find / Love, then a campus handshake), then university-email sign in. The rest of the app uses the same near-black and ember look — not the old pink mockups.
